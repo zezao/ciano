@@ -134,6 +134,37 @@ func deleteLinkIfExists(name string) error {
 	return netlink.LinkDel(link)
 }
 
+func teardownVeth(hostVethName, netnsPath, ifName string) error {
+	link, err := netlink.LinkByName(hostVethName)
+	if err == nil {
+		if err := netlink.LinkDel(link); err != nil {
+			return fmt.Errorf("failed to delete veth %q: %w", hostVethName, err)
+		}
+		return nil
+	}
+	if _, notFound := err.(netlink.LinkNotFoundError); !notFound {
+		return fmt.Errorf("failed to look up veth %q: %w", hostVethName, err)
+	}
+
+	if netnsPath == "" {
+		return nil
+	}
+
+	err = ns.WithNetNSPath(netnsPath, func(_ ns.NetNS) error {
+		if err := ip.DelLinkByName(ifName); err != nil && !errors.Is(err, ip.ErrLinkNotFound) {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		if _, notExist := err.(ns.NSPathNotExistErr); notExist {
+			return nil
+		}
+		return fmt.Errorf("failed to clean up netns %q: %w", netnsPath, err)
+	}
+	return nil
+}
+
 func createVeth(netns ns.NetNS, hostVethName, ifName string, mtu int) (*current.Interface, *current.Interface, error) {
 	var hostIface, contIface *current.Interface
 	err := netns.Do(func(hostNS ns.NetNS) error {

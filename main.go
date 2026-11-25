@@ -132,12 +132,14 @@ func cmdDel(args *skel.CmdArgs) error {
 		conf.Name, args.ContainerID, args.Netns, args.IfName)
 
 	hostVethName := makeVethName(args.ContainerID, args.IfName)
-	if err := deleteLinkIfExists(hostVethName); err != nil {
-		return fmt.Errorf("failed to delete veth %q: %w", hostVethName, err)
+	if err := teardownVeth(hostVethName, args.Netns, args.IfName); err != nil {
+		return err
 	}
 
-	if err := ipam.ExecDel(conf.IPAM.Type, args.StdinData); err != nil {
-		return fmt.Errorf("failed to release IPAM allocation: %w", err)
+	if conf.IPAM.Type != "" {
+		if err := ipam.ExecDel(conf.IPAM.Type, args.StdinData); err != nil {
+			return fmt.Errorf("failed to release IPAM allocation: %w", err)
+		}
 	}
 	return nil
 }
