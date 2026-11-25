@@ -131,22 +131,22 @@ decode content); errors returned by the plugin's commands use code `999`.
 ```mermaid
 sequenceDiagram
     autonumber
-    participant RT as Runtime (containerd / cnitool)
+    participant RT as Runtime
     participant P as ciano
     participant HL as host-local
     participant K as Linux kernel
     participant FS as dataDir
 
-    RT->>P: execve (env CNI_*, stdin = config)
-    P->>P: skel parses env + config, validates cniVersion
-    P->>HL: execve (env inherited, CNI_COMMAND=ADD, stdin = full config)
-    HL->>FS: exclusive-create <IP> allocation file
-    HL-->>P: stdout = result JSON
-    P->>K: create veth pair; peer into CNI_NETNS
-    P->>K: ensure bridge + gateway; attach host veth
-    P->>K: add addresses + routes inside the container netns
-    P-->>RT: stdout = result JSON, exit 0
-    Note over RT: stores the result;<br/>later supplies it as prevResult for CHECK
+    RT->>P: execve with CNI_* env and config on stdin
+    P->>P: skel parses env and config, validates cniVersion
+    P->>HL: execve with inherited env, CNI_COMMAND=ADD, full config
+    HL->>FS: exclusive-create an IP allocation file
+    HL-->>P: stdout result JSON
+    P->>K: create veth pair, peer into CNI_NETNS
+    P->>K: ensure bridge and gateway, attach host veth
+    P->>K: add addresses and routes inside the container netns
+    P-->>RT: stdout result JSON, exit 0
+    Note over RT: stores the result and supplies it later as prevResult for CHECK
 ```
 
 ### The delegation recursion
