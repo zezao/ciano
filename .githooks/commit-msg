@@ -1,27 +1,46 @@
 #!/bin/sh
-# Enforce commit subject prefix: doc:, feat:, fix:
+# Enforce commit subject format: <type>: <lowercase summary>
+# Types: doc:, feat:, fix:
 # Install with: make hooks
 
-msg_file=$1
-subject=$(sed -n '1p' "$msg_file")
+subject=$(head -n 1 "$1")
 
 # Allow Git-generated messages and interactive-rebase markers.
 case "$subject" in
-  "Merge "* | "Revert "* | "fixup! "* | "squash! "*)
+  "Merge "?* | "Revert "?* | "fixup! "?* | "squash! "?* | "amend! "?*)
     exit 0
     ;;
 esac
 
-if ! printf '%s\n' "$subject" | grep -Eq '^(doc|feat|fix): .+'; then
-  cat >&2 <<EOF
-error: invalid commit subject: "$subject"
+case "$subject" in
+  "doc: "?* | "feat: "?* | "fix: "?*)
+    ;;
+  *)
+    printf 'error: commit subject must start with doc:, feat:, or fix:\n' >&2
+    printf '  got: %s\n' "$subject" >&2
+    printf '  see AGENTS.md for the commit message format\n' >&2
+    exit 1
+    ;;
+esac
 
-Commit subjects must start with one of:
-  doc:   documentation only
-  feat:  new functionality
-  fix:   bug fixes and behavioral corrections
+summary=${subject#*: }
 
-Example: feat: add veth pair setup
-EOF
-  exit 1
-fi
+case "$summary" in
+  [abcdefghijklmnopqrstuvwxyz]*)
+    ;;
+  *)
+    printf 'error: commit summary must start with a lowercase letter:\n' >&2
+    printf '  got: %s\n' "$summary" >&2
+    printf '  see AGENTS.md for the commit message format\n' >&2
+    exit 1
+    ;;
+esac
+
+case "$subject" in
+  *.)
+    printf 'error: commit subject must not end with a period:\n' >&2
+    printf '  got: %s\n' "$subject" >&2
+    printf '  see AGENTS.md for the commit message format\n' >&2
+    exit 1
+    ;;
+esac
