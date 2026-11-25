@@ -150,7 +150,43 @@ func cmdCheck(args *skel.CmdArgs) error {
 		return err
 	}
 
+	if conf.RawPrevResult == nil {
+		return fmt.Errorf("CHECK requires a prevResult in the network configuration")
+	}
+	if err := version.ParsePrevResult(&conf.NetConf); err != nil {
+		return fmt.Errorf("failed to parse prevResult: %w", err)
+	}
+	if conf.PrevResult == nil {
+		return fmt.Errorf("prevResult is empty")
+	}
+	prevResult, err := current.NewResultFromResult(conf.PrevResult)
+	if err != nil {
+		return fmt.Errorf("failed to convert prevResult: %w", err)
+	}
+	if len(prevResult.IPs) == 0 {
+		return fmt.Errorf("prevResult contains no IP addresses")
+	}
+
 	fmt.Fprintf(os.Stderr, "CHECK network=%s containerID=%s netns=%s ifname=%s\n",
 		conf.Name, args.ContainerID, args.Netns, args.IfName)
-	return nil
+
+	if conf.IPAM.Type != "" {
+		if err := ipam.ExecCheck(conf.IPAM.Type, args.StdinData); err != nil {
+			return fmt.Errorf("IPAM check failed: %w", err)
+		}
+	}
+
+	netns, err := ns.GetNS(args.Netns)
+	if err != nil {
+		return fmt.Errorf("failed to open netns %q: %w", args.Netns, err)
+	}
+	defer netns.Close()
+
+	if err := checkHostNetworking(conf, args.ContainerID, args.Netns, args.IfName, prevResult); err != nil {
+		return err
+	}
+
+	return netns.Do(func(_ ns.NetNS) error {
+		return validateContainerState(args.IfName, prevResult)
+	})
 }

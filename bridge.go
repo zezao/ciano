@@ -227,3 +227,104 @@ func enableIPForward(family int) error {
 	}
 	return nil
 }
+
+func checkHostNetworking(conf *NetConf, containerID, netnsPath, ifName string, result *current.Result) error {
+	brLink, err := netlink.LinkByName(conf.BrName)
+	if err != nil {
+		return fmt.Errorf("bridge %q not found: %w", conf.BrName, err)
+	}
+	br, ok := brLink.(*netlink.Bridge)
+	if !ok {
+		return fmt.Errorf("link %q is not a bridge", conf.BrName)
+	}
+	if br.Attrs().Flags&net.FlagUp == 0 {
+		return fmt.Errorf("bridge %q is down", conf.BrName)
+	}
+
+	hostVethName := makeVethName(containerID, ifName)
+	hostVeth, err := netlink.LinkByName(hostVethName)
+	if err != nil {
+		return fmt.Errorf("host veth %q not found: %w", hostVethName, err)
+	}
+	if _, ok := hostVeth.(*netlink.Veth); !ok {
+		return fmt.Errorf("link %q is not a veth", hostVethName)
+	}
+	if hostVeth.Attrs().MasterIndex != br.Attrs().Index {
+		return fmt.Errorf("host veth %q is not attached to bridge %q", hostVethName, conf.BrName)
+	}
+	if hostVeth.Attrs().Flags&net.FlagUp == 0 {
+		return fmt.Errorf("host veth %q is down", hostVethName)
+	}
+
+	for _, intf := range result.Interfaces {
+		if intf.Name == ifName && intf.Sandbox != "" && intf.Sandbox != netnsPath {
+			return fmt.Errorf("prevResult sandbox %q does not match netns %q", intf.Sandbox, netnsPath)
+		}
+		if intf.Name == hostVethName && intf.Mac != "" && intf.Mac != hostVeth.Attrs().HardwareAddr.String() {
+			return fmt.Errorf("host veth %q MAC is %s, prevResult says %s",
+				hostVethName, hostVeth.Attrs().HardwareAddr, intf.Mac)
+		}
+	}
+
+	if conf.IsGateway {
+		for _, ipc := range result.IPs {
+			if ipc.Gateway == nil {
+				continue
+			}
+			found, err := linkHasAddr(br, ipc.Gateway)
+			if err != nil {
+				return fmt.Errorf("failed to list bridge addresses: %w", err)
+			}
+			if !found {
+				return fmt.Errorf("bridge %q is missing gateway address %s", conf.BrName, ipc.Gateway)
+			}
+		}
+	}
+	return nil
+}
+
+func checkContainerInterface(ifName string, result *current.Result) error {
+	link, err := netlink.LinkByName(ifName)
+	if err != nil {
+		return fmt.Errorf("container interface %q not found: %w", ifName, err)
+	}
+	if _, ok := link.(*netlink.Veth); !ok {
+		return fmt.Errorf("container interface %q is not a veth", ifName)
+	}
+	if link.Attrs().Flags&net.FlagUp == 0 {
+		return fmt.Errorf("container interface %q is down", ifName)
+	}
+	for _, intf := range result.Interfaces {
+		if intf.Name == ifName && intf.Mac != "" && intf.Mac != link.Attrs().HardwareAddr.String() {
+			return fmt.Errorf("interface %q MAC is %s, prevResult says %s",
+				ifName, link.Attrs().HardwareAddr, intf.Mac)
+		}
+	}
+	return nil
+}
+
+func validateContainerState(ifName string, result *current.Result) error {
+	if err := checkContainerInterface(ifName, result); err != nil {
+		return err
+	}
+	if err := ip.ValidateExpectedInterfaceIPs(ifName, result.IPs); err != nil {
+		return fmt.Errorf("address validation failed: %w", err)
+	}
+	if err := ip.ValidateExpectedRoute(result.Routes); err != nil {
+		return fmt.Errorf("route validation failed: %w", err)
+	}
+	return nil
+}
+
+func linkHasAddr(link netlink.Link, addr net.IP) (bool, error) {
+	addrs, err := netlink.AddrList(link, netlink.FAMILY_ALL)
+	if err != nil {
+		return false, err
+	}
+	for _, a := range addrs {
+		if a.IPNet != nil && a.IPNet.IP.Equal(addr) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
