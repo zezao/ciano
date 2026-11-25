@@ -1,0 +1,27 @@
+#!/bin/sh
+# Enforce commit subject prefix: doc:, feat:, fix:
+# Install with: make hooks
+
+msg_file=$1
+subject=$(sed -n '1p' "$msg_file")
+
+# Allow Git-generated messages and interactive-rebase markers.
+case "$subject" in
+  "Merge "* | "Revert "* | "fixup! "* | "squash! "*)
+    exit 0
+    ;;
+esac
+
+if ! printf '%s\n' "$subject" | grep -Eq '^(doc|feat|fix): .+'; then
+  cat >&2 <<EOF
+error: invalid commit subject: "$subject"
+
+Commit subjects must start with one of:
+  doc:   documentation only
+  feat:  new functionality
+  fix:   bug fixes and behavioral corrections
+
+Example: feat: add veth pair setup
+EOF
+  exit 1
+fi

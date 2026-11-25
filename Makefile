@@ -1,6 +1,6 @@
 BIN := bin
 
-.PHONY: build test vet fmt clean test-userns
+.PHONY: build test vet fmt clean test-userns hooks
 
 build:
 	go build -o $(BIN)/ciano .
@@ -10,6 +10,9 @@ test:
 
 test-userns:
 	./hack/test-userns.sh
+
+hooks:
+	git config core.hooksPath .githooks
 
 vet:
 	go vet ./...
